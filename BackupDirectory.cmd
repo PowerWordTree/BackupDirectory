@@ -4,6 +4,7 @@
 
 @ECHO OFF
 SETLOCAL ENABLEDELAYEDEXPANSION
+SET "RETURN=0"
 
 ::读取配置文件
 FOR /F "eol=# tokens=1,* delims== usebackq" %%I IN ("%~dpn0.cfg") DO (
@@ -25,6 +26,7 @@ IF NOT EXIST "%BACKUP_PATH%" (
   IF NOT EXIST "%BACKUP_PATH%" (
     ECHO.
     ECHO 备份路径不存在或设置错误!
+    SET "RETURN=1"
     GOTO :END
   )
 )
@@ -56,6 +58,7 @@ IF EXIST "%BACKUP_PATH%\%BACKUP_FILE%.wim" (
 IF NOT "_%ERRORLEVEL%" == "_0" (
   CALL :ECHO_DATETIME "========== 备份失败 " " ==========" >>"%BACKUP_PATH%\%BACKUP_NAME%.LOG"
   RENAME "%BACKUP_PATH%\%BACKUP_NAME%.LOG" "%BACKUP_PATH%\%BACKUP_NAME%_ERROR.LOG"
+  SET "RETURN=1"
   GOTO :END
 ) ELSE (
   CALL :ECHO_DATETIME "========== 备份成功 " " ==========" >>"%BACKUP_PATH%\%BACKUP_NAME%.LOG"
@@ -134,4 +137,5 @@ SET "BACKUP_PATH="
 SET "BACKUP_FILE="
 SET "BACKUP_LIMIT="
 SET "BACKUP_NAME="
-ENDLOCAL
+
+EXIT /B %RETURN%
