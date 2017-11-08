@@ -1,6 +1,6 @@
 ::目录备份脚本
 ::@author FB
-::@version 1.05
+::@version 1.06
 
 @ECHO OFF
 SETLOCAL ENABLEDELAYEDEXPANSION
@@ -48,11 +48,11 @@ CALL :ECHO_DATETIME "========== 开始备份 " " ==========" >>"%BACKUP_PATH%\%BACKU
 IF EXIST "%BACKUP_PATH%\%BACKUP_FILE%.wim" (
   ::添加到WIM文件
   CALL :ECHO_DATETIME "========== 添加到WIM文件(%BACKUP_PATH%\%BACKUP_FILE%.wim) " " ==========" >>"%BACKUP_PATH%\%BACKUP_NAME%.LOG"
-  %DISM_EXE% /English /LogPath:"%BACKUP_PATH%\%BACKUP_NAME%_DISM.LOG" /Append-Image /ImageFile:"%BACKUP_PATH%\%BACKUP_FILE%.wim" /CaptureDir:"%BACKUP_SRC%" /Name:"%BACKUP_NAME%" /CheckIntegrity >>"%BACKUP_PATH%\%BACKUP_NAME%.LOG"
+  %DISM_EXE% /English /LogPath:"%BACKUP_PATH%\%BACKUP_NAME%_DISM.LOG" /Append-Image /ImageFile:"%BACKUP_PATH%\%BACKUP_FILE%.wim" /CaptureDir:"%BACKUP_SRC%" /Name:"%BACKUP_NAME%" /Description:"Backup [%BACKUP_SRC%] directory." /CheckIntegrity >>"%BACKUP_PATH%\%BACKUP_NAME%.LOG"
 ) ELSE (
   ::新建WIM文件
   CALL :ECHO_DATETIME "========== 新建到WIM文件(%BACKUP_PATH%\%BACKUP_FILE%.wim) " " ==========" >>"%BACKUP_PATH%\%BACKUP_NAME%.LOG"
-  %DISM_EXE% /English /LogPath:"%BACKUP_PATH%\%BACKUP_NAME%_DISM.LOG" /Capture-Image /ImageFile:"%BACKUP_PATH%\%BACKUP_FILE%.wim" /CaptureDir:"%BACKUP_SRC%" /Name:"%BACKUP_NAME%" /Compress:max /CheckIntegrity >>"%BACKUP_PATH%\%BACKUP_NAME%.LOG"
+  %DISM_EXE% /English /LogPath:"%BACKUP_PATH%\%BACKUP_NAME%_DISM.LOG" /Capture-Image /ImageFile:"%BACKUP_PATH%\%BACKUP_FILE%.wim" /CaptureDir:"%BACKUP_SRC%" /Name:"%BACKUP_NAME%" /Description:"Backup [%BACKUP_SRC%] directory." /Compress:max /CheckIntegrity >>"%BACKUP_PATH%\%BACKUP_NAME%.LOG"
 )
 ::如果备份失败
 IF NOT "_%ERRORLEVEL%" == "_0" (
