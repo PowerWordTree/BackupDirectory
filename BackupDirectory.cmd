@@ -1,13 +1,22 @@
 ::目录备份脚本
 ::@author FB
-::@version 1.06
+::@version 1.07
 
 @ECHO OFF
 SETLOCAL ENABLEDELAYEDEXPANSION
 SET "RETURN=0"
 
+::处理命令行参数
+::  参数1: 配置文件
+IF EXIST "%~1" (
+  SET "CFG_FILE=%~1"
+) ELSE (
+  SET "CFG_FILE=%~dpn0.cfg"
+)
+
 ::读取配置文件
-FOR /F "eol=# tokens=1,* delims== usebackq" %%I IN ("%~dpn0.cfg") DO (
+FOR %%I IN ("BACKUP_SRC","BACKUP_PATH","BACKUP_FILE","BACKUP_LIMIT") DO SET "%%I="
+FOR /F "eol=# tokens=1,* delims== usebackq" %%I IN ("%CFG_FILE%") DO (
   CALL :TRIM "%%I" "VARNAME"
   CALL :TRIM "%%J" "VARDATA"
   SET "!VARNAME!=!VARDATA!"
