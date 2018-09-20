@@ -1,19 +1,44 @@
 ::目录备份脚本
 ::@author FB
-::@version 1.07
+::@version 1.08
 
 @ECHO OFF
 SETLOCAL ENABLEDELAYEDEXPANSION
 SET "RETURN=0"
 
 ::处理命令行参数
-::  参数1: 配置文件
-IF EXIST "%~1" (
-  SET "CFG_FILE=%~1"
-) ELSE (
+::  BackupDirectory.CMD [配置名[.cfg]] [排除列表[.ini]]
+IF "%~1" == "" (
   SET "CFG_FILE=%~dpn0.cfg"
+  SET "EXI_FILE=%~dpn0.ini"
+) ELSE (
+  IF /I "%~x1" == ".cfg" (
+    SET "CFG_FILE=%~f1"
+    SET "EXI_FILE=%~dpn1.ini"
+  ) ELSE (
+    SET "CFG_FILE=%~f1.cfg"
+    SET "EXI_FILE=%~f1.ini"
+  )
 )
-
+IF NOT "%~2" == "" (
+  IF /I "%~x2" == ".ini" (
+    SET "EXI_FILE=%~f2"
+  ) ELSE (
+    SET "EXI_FILE=%~f2.ini"
+  )
+)
+::检查参数
+IF NOT EXIST "%CFG_FILE%" (
+    ECHO.
+    ECHO 配置文件不存在!
+    SET "RETURN=1"
+    GOTO :END
+)
+IF EXIST "%EXI_FILE%" (
+  SET WIM_EXI_ARG=/ConfigFile:"%EXI_FILE%"
+) ELSE (
+  SET "WIM_EXI_ARG="
+)
 ::读取配置文件
 FOR %%I IN ("BACKUP_SRC","BACKUP_PATH","BACKUP_FILE","BACKUP_LIMIT") DO SET "%%I="
 FOR /F "eol=# tokens=1,* delims== usebackq" %%I IN ("%CFG_FILE%") DO (
@@ -21,14 +46,12 @@ FOR /F "eol=# tokens=1,* delims== usebackq" %%I IN ("%CFG_FILE%") DO (
   CALL :TRIM "%%J" "VARDATA"
   SET "!VARNAME!=!VARDATA!"
 )
-
-::处理路径
+::处理命令路径
 IF "_%PROCESSOR_ARCHITECTURE%" == "_AMD64" (
   SET "DISM_EXE=%~dp0\DISMx64\DISM.EXE"
 ) ELSE (
   SET "DISM_EXE=%~dp0\DISMx86\DISM.EXE"
 )
-
 ::检查备份路径
 IF NOT EXIST "%BACKUP_PATH%" (
   MKDIR "%BACKUP_PATH%"
@@ -39,29 +62,26 @@ IF NOT EXIST "%BACKUP_PATH%" (
     GOTO :END
   )
 )
-
 ::生成备份名
 CALL :FORMAT_DATE "%DATE%" NOW_DATE
 SET "BACKUP_NAME=%BACKUP_FILE%_%NOW_DATE%"
 SET "NOW_DATE="
-
 ::判断是否执行过
 FOR /F "tokens=1,2,* delims=^: " %%A IN ('%DISM_EXE% /English /LogPath:"%BACKUP_PATH%\%BACKUP_NAME%_DISM.LOG" /Get-ImageInfo /ImageFile:"%BACKUP_PATH%\%BACKUP_FILE%.wim" ^| FINDSTR "Name .*"') DO IF "_%%~B" == "_%BACKUP_NAME%" (
   ECHO.
   ECHO 今天已经执行过!
   GOTO :END
 )
-
 ::开始备份
 CALL :ECHO_DATETIME "========== 开始备份 " " ==========" >>"%BACKUP_PATH%\%BACKUP_NAME%.LOG"
 IF EXIST "%BACKUP_PATH%\%BACKUP_FILE%.wim" (
   ::添加到WIM文件
   CALL :ECHO_DATETIME "========== 添加到WIM文件(%BACKUP_PATH%\%BACKUP_FILE%.wim) " " ==========" >>"%BACKUP_PATH%\%BACKUP_NAME%.LOG"
-  %DISM_EXE% /English /LogPath:"%BACKUP_PATH%\%BACKUP_NAME%_DISM.LOG" /Append-Image /ImageFile:"%BACKUP_PATH%\%BACKUP_FILE%.wim" /CaptureDir:"%BACKUP_SRC%" /Name:"%BACKUP_NAME%" /Description:"Backup [%BACKUP_SRC%] directory." /CheckIntegrity >>"%BACKUP_PATH%\%BACKUP_NAME%.LOG"
+  %DISM_EXE% /English /LogPath:"%BACKUP_PATH%\%BACKUP_NAME%_DISM.LOG" /Append-Image /ImageFile:"%BACKUP_PATH%\%BACKUP_FILE%.wim" /CaptureDir:"%BACKUP_SRC%" /Name:"%BACKUP_NAME%" /Description:"Backup [%BACKUP_SRC%] directory." /CheckIntegrity %WIM_EXI_ARG% >>"%BACKUP_PATH%\%BACKUP_NAME%.LOG"
 ) ELSE (
   ::新建WIM文件
   CALL :ECHO_DATETIME "========== 新建到WIM文件(%BACKUP_PATH%\%BACKUP_FILE%.wim) " " ==========" >>"%BACKUP_PATH%\%BACKUP_NAME%.LOG"
-  %DISM_EXE% /English /LogPath:"%BACKUP_PATH%\%BACKUP_NAME%_DISM.LOG" /Capture-Image /ImageFile:"%BACKUP_PATH%\%BACKUP_FILE%.wim" /CaptureDir:"%BACKUP_SRC%" /Name:"%BACKUP_NAME%" /Description:"Backup [%BACKUP_SRC%] directory." /Compress:max /CheckIntegrity >>"%BACKUP_PATH%\%BACKUP_NAME%.LOG"
+  %DISM_EXE% /English /LogPath:"%BACKUP_PATH%\%BACKUP_NAME%_DISM.LOG" /Capture-Image /ImageFile:"%BACKUP_PATH%\%BACKUP_FILE%.wim" /CaptureDir:"%BACKUP_SRC%" /Name:"%BACKUP_NAME%" /Description:"Backup [%BACKUP_SRC%] directory." /Compress:max /CheckIntegrity %WIM_EXI_ARG% >>"%BACKUP_PATH%\%BACKUP_NAME%.LOG"
 )
 ::如果备份失败
 IF NOT "_%ERRORLEVEL%" == "_0" (
@@ -93,10 +113,10 @@ FOR /L %%I IN (1,1,%OVERDUE_COUNT%) DO (
 )
 SET "OVERDUE_NAME="
 SET "OVERDUE_COUNT="
-
 ::备份操作结束
 CALL :ECHO_DATETIME "========== 备份操作结束 " " ==========" >>"%BACKUP_PATH%\%BACKUP_NAME%.LOG"
 GOTO :END
+
 
 ::统一日期格式字符串
 ::  参数1: 输入日期格式(yyyy MM dd)
@@ -141,10 +161,5 @@ SET "TRIMED_STRING=%*"
 GOTO :EOF
 
 :END
-SET "BACKUP_SRC="
-SET "BACKUP_PATH="
-SET "BACKUP_FILE="
-SET "BACKUP_LIMIT="
-SET "BACKUP_NAME="
-
+FOR %%I IN ("BACKUP_SRC","BACKUP_PATH","BACKUP_FILE","BACKUP_LIMIT","CFG_FILE","EXI_FILE","WIM_EXI_ARG") DO SET "%%I="
 EXIT /B %RETURN%
