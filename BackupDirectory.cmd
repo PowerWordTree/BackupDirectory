@@ -1,165 +1,148 @@
 ::目录备份脚本
 ::@author FB
-::@version 1.08
+::@version 1.10
 
 @ECHO OFF
 SETLOCAL ENABLEDELAYEDEXPANSION
+CD /D "%~dp0"
+SET "PATH=%CD%\Bin;C:\Develop\Workspaces\CmdTools\Script;%PATH%"
 SET "RETURN=0"
 
-::处理命令行参数
-::  BackupDirectory.CMD [配置名[.cfg]] [排除列表[.ini]]
+::解析命令
+::::BackupDirectory.CMD [配置[.cfg]]
 IF "%~1" == "" (
-  SET "CFG_FILE=%~dpn0.cfg"
-  SET "EXI_FILE=%~dpn0.ini"
-) ELSE (
-  IF /I "%~x1" == ".cfg" (
+    SET "CFG_FILE=%~dpn0.cfg"
+) ELSE IF /I "%~x1" == ".cfg" (
     SET "CFG_FILE=%~f1"
-    SET "EXI_FILE=%~dpn1.ini"
-  ) ELSE (
+) ELSE (
     SET "CFG_FILE=%~f1.cfg"
-    SET "EXI_FILE=%~f1.ini"
-  )
 )
-IF NOT "%~2" == "" (
-  IF /I "%~x2" == ".ini" (
-    SET "EXI_FILE=%~f2"
-  ) ELSE (
-    SET "EXI_FILE=%~f2.ini"
-  )
-)
-::检查参数
+::::测试配置文件
 IF NOT EXIST "%CFG_FILE%" (
     ECHO.
     ECHO 配置文件不存在!
     SET "RETURN=1"
     GOTO :END
 )
-IF EXIST "%EXI_FILE%" (
-  SET WIM_EXI_ARG=/ConfigFile:"%EXI_FILE%"
-) ELSE (
-  SET "WIM_EXI_ARG="
+::读取配置
+CALL DateTime.CMD ECHO 读取配置
+CALL ConfigFile.CMD CLEAN_VARS "BACKUP_SRC" "BACKUP_DEST" 
+CALL ConfigFile.CMD CLEAN_VARS "BACKUP_PASS" "BACKUP_RULES" 
+CALL ConfigFile.CMD CLEAN_VARS "BACKUP_LIMIT" "BACKUP_EQUAL"
+CALL ConfigFile.CMD READ_CONF "%CFG_FILE%"
+ECHO 来源路径: %BACKUP_SRC%
+ECHO 目标路径: %BACKUP_DEST%
+ECHO 规则文件: %BACKUP_RULES%
+ECHO 保留历史: %BACKUP_LIMIT%
+ECHO 相同副本: %BACKUP_EQUAL%
+::::处理参数
+CALL CygPath.CMD TO_CYG_PATH "%BACKUP_SRC%"
+SET "BACKUP_SRC=%$%"
+CALL CygPath.CMD TO_CYG_PATH "%BACKUP_DEST%"
+SET "BACKUP_DEST=%$%"
+SET "RSYNC_PASSWORD=%BACKUP_PASS%"
+SET "CYGWIN=winsymlinks:nativestrict"
+SET "MSYS=%CYGWIN%"
+SET "LANG=zh_CN.GBK"
+SET "OUTPUT_CHARSET=GBK"
+CALL RETRY.CMD SET 2 30
+SET "BACKUP_ARG=--archive --delete --compress --verbose --human-readable"
+SET "BACKUP_ARG=%BACKUP_ARG% --filter="merge Global.rules""
+IF NOT "%BACKUP_RULES%" == "" (
+    SET "BACKUP_ARG=%BACKUP_ARG% --filter="merge %BACKUP_RULES%""
 )
-::读取配置文件
-FOR %%I IN ("BACKUP_SRC","BACKUP_PATH","BACKUP_FILE","BACKUP_LIMIT") DO SET "%%I="
-FOR /F "eol=# tokens=1,* delims== usebackq" %%I IN ("%CFG_FILE%") DO (
-  CALL :TRIM "%%I" "VARNAME"
-  CALL :TRIM "%%J" "VARDATA"
-  SET "!VARNAME!=!VARDATA!"
+IF 0%BACKUP_LIMIT% LEQ 0 SET "BACKUP_LIMIT=1"
+CALL DateTime.CMD GET_DATETIME
+SET "BACKUP_NAME=%$%"
+SET "BACKUP_NAME=%BACKUP_NAME::=.%"
+SET "BACKUP_NAME=%BACKUP_NAME: =_%"
+::检查参数
+CALL DateTime.CMD ECHO 检查参数
+CALL RSYNC.CMD PARAM_SET %BACKUP_ARG% --exclude="*"
+CALL RETRY.CMD EXEC RSYNC.CMD DRY_RUN "%BACKUP_SRC%" "%BACKUP_DEST%" >NUL
+IF NOT "%ERRORLEVEL%" == "0" (
+    ECHO 参数或配置文件有错误.
+    SET "RETURN=%$%"
+    GOTO :END
 )
-::处理命令路径
-IF "_%PROCESSOR_ARCHITECTURE%" == "_AMD64" (
-  SET "DISM_EXE=%~dp0\DISMx64\DISM.EXE"
-) ELSE (
-  SET "DISM_EXE=%~dp0\DISMx86\DISM.EXE"
+ECHO 模拟运行成功,参数正确.
+::查询最新备份
+CALL DateTime.CMD ECHO 查询最新备份
+CALL Array.CMD NEW "BACKUP_LIST"
+CALL RSYNC.CMD PARAM_SET --no-motd --include="/*/" --exclude="*"
+FOR /F "tokens=1-4,* usebackq" %%A IN (
+    `CMD /V:ON /C RETRY.CMD EXEC RSYNC.CMD LIST "%BACKUP_DEST%/" ^|^| ECHO LiSt:ErrOr`
+) DO (
+    IF "%%~A" == "LiSt:ErrOr" (
+        ECHO 查询备份列表时发生错误.
+        SET "RETURN=1"
+        GOTO :END
+    )
+    ECHO %%~E | FINDSTR /I /X /R /C:"[0-9][0-9][0-9][0-9]-[0-1][0-9]-[0-3][0-9]_[0-2][0-9]\.[0-5][0-9]\.[0-5][0-9] "
+    IF "!ERRORLEVEL!" == "0" CALL Array.CMD PUSH "BACKUP_LIST" "%%~E"
 )
-::检查备份路径
-IF NOT EXIST "%BACKUP_PATH%" (
-  MKDIR "%BACKUP_PATH%"
-  IF NOT EXIST "%BACKUP_PATH%" (
-    ECHO.
-    ECHO 备份路径不存在或设置错误!
+CALL Array.CMD SORT "BACKUP_LIST"
+CALL Array.CMD GET "BACKUP_LIST"
+SET "BACKUP_LAST=%$%"
+ECHO 使用"%BACKUP_LAST%"为基准路径
+::比较目录文件
+CALL DateTime.CMD ECHO 比较目录文件
+SET /A "BACKUP_COUNT=0"
+CALL RSYNC.CMD PARAM_SET %BACKUP_ARG% --no-motd --link-dest="../%BACKUP_LAST%" 
+FOR /F "tokens=* usebackq" %%A IN (
+    `CMD /V:ON /C RETRY.CMD EXEC RSYNC.CMD DRY_RUN "%BACKUP_SRC%/" "%BACKUP_DEST%/%BACKUP_NAME%" ^|^| ECHO CoMp:ErrOr`
+) DO (
+    IF "%%~A" == "CoMp:ErrOr" (
+        ECHO 比较文件和目录时发生错误.
+        SET "RETURN=1"
+        GOTO :END
+    )
+    ECHO %%~A | FINDSTR /V /I /R /C:"building file list .*" /C:"sending incremental file list" /C:"created directory .*" /C:"\./" /C:"sent .* received .*" /C:"total size is .* speedup is .*" 1>NUL 2>&1
+    IF "!ERRORLEVEL!" == "0" SET /A "BACKUP_COUNT+=1"
+)
+ECHO 需同步的文件和目录数量: !BACKUP_COUNT!
+::同步目录文件
+CALL DateTime.CMD ECHO 同步目录文件
+IF "%BACKUP_COUNT%" == "0" IF /I NOT "%BACKUP_EQUAL%" == "TRUE" (
+    ECHO 没有文件或目录改变,无需同步.
+    GOTO :END
+)
+CALL RSYNC.CMD PARAM_SET %BACKUP_ARG% --link-dest="../%BACKUP_LAST%"
+CALL RETRY.CMD EXEC RSYNC.CMD RUN "%BACKUP_SRC%/" "%BACKUP_DEST%/%BACKUP_NAME%"
+IF NOT "%ERRORLEVEL%" == "0" (
+    ECHO 执行同步失败,删除不完整备份.
+    CALL RSYNC.CMD PARAM_SET --archive --delete --no-motd --filter="hide *" --filter="risk /%BACKUP_NAME%*" --filter="protect /*"
+    CALL RETRY.CMD EXEC RSYNC.CMD RUN "./" "%BACKUP_DEST%"
+    ECHO 同步目录文件任务失败.
     SET "RETURN=1"
     GOTO :END
-  )
 )
-::生成备份名
-CALL :FORMAT_DATE "%DATE%" NOW_DATE
-SET "BACKUP_NAME=%BACKUP_FILE%_%NOW_DATE%"
-SET "NOW_DATE="
-::判断是否执行过
-FOR /F "tokens=1,2,* delims=^: " %%A IN ('%DISM_EXE% /English /LogPath:"%BACKUP_PATH%\%BACKUP_NAME%_DISM.LOG" /Get-ImageInfo /ImageFile:"%BACKUP_PATH%\%BACKUP_FILE%.wim" ^| FINDSTR "Name .*"') DO IF "_%%~B" == "_%BACKUP_NAME%" (
-  ECHO.
-  ECHO 今天已经执行过!
-  GOTO :END
-)
-::开始备份
-CALL :ECHO_DATETIME "========== 开始备份 " " ==========" >>"%BACKUP_PATH%\%BACKUP_NAME%.LOG"
-IF EXIST "%BACKUP_PATH%\%BACKUP_FILE%.wim" (
-  ::添加到WIM文件
-  CALL :ECHO_DATETIME "========== 添加到WIM文件(%BACKUP_PATH%\%BACKUP_FILE%.wim) " " ==========" >>"%BACKUP_PATH%\%BACKUP_NAME%.LOG"
-  %DISM_EXE% /English /LogPath:"%BACKUP_PATH%\%BACKUP_NAME%_DISM.LOG" /Append-Image /ImageFile:"%BACKUP_PATH%\%BACKUP_FILE%.wim" /CaptureDir:"%BACKUP_SRC%" /Name:"%BACKUP_NAME%" /Description:"Backup [%BACKUP_SRC%] directory." /CheckIntegrity %WIM_EXI_ARG% >>"%BACKUP_PATH%\%BACKUP_NAME%.LOG"
-) ELSE (
-  ::新建WIM文件
-  CALL :ECHO_DATETIME "========== 新建到WIM文件(%BACKUP_PATH%\%BACKUP_FILE%.wim) " " ==========" >>"%BACKUP_PATH%\%BACKUP_NAME%.LOG"
-  %DISM_EXE% /English /LogPath:"%BACKUP_PATH%\%BACKUP_NAME%_DISM.LOG" /Capture-Image /ImageFile:"%BACKUP_PATH%\%BACKUP_FILE%.wim" /CaptureDir:"%BACKUP_SRC%" /Name:"%BACKUP_NAME%" /Description:"Backup [%BACKUP_SRC%] directory." /Compress:max /CheckIntegrity %WIM_EXI_ARG% >>"%BACKUP_PATH%\%BACKUP_NAME%.LOG"
-)
-::如果备份失败
-IF NOT "_%ERRORLEVEL%" == "_0" (
-  CALL :ECHO_DATETIME "========== 备份失败 " " ==========" >>"%BACKUP_PATH%\%BACKUP_NAME%.LOG"
-  RENAME "%BACKUP_PATH%\%BACKUP_NAME%.LOG" "%BACKUP_NAME%_ERROR.LOG"
-  SET "RETURN=1"
-  GOTO :END
-) ELSE (
-  CALL :ECHO_DATETIME "========== 备份成功 " " ==========" >>"%BACKUP_PATH%\%BACKUP_NAME%.LOG"
-)
-
+SET "BACKUP_LIST[!BACKUP_LIST!]=%BACKUP_LAST%"
+SET /A "BACKUP_LIST+=1"
 ::清理过期备份
-CALL :ECHO_DATETIME "========== 开始清理过期备份 " " ==========" >>"%BACKUP_PATH%\%BACKUP_NAME%.LOG"
-::获取备份数量
-SET "OVERDUE_COUNT=0"
-FOR /F "tokens=1,2,* delims=^: " %%A IN ('%DISM_EXE% /English /LogPath:"%BACKUP_PATH%\%BACKUP_NAME%_DISM.LOG" /Get-ImageInfo /ImageFile:"%BACKUP_PATH%\%BACKUP_FILE%.wim" ^| FINDSTR "Name .*"') DO SET /A "OVERDUE_COUNT=!OVERDUE_COUNT!+1"
-::计算过期数量
-SET /A "OVERDUE_COUNT=%OVERDUE_COUNT%-%BACKUP_LIMIT%"
-::清理过期
-FOR /L %%I IN (1,1,%OVERDUE_COUNT%) DO (
-  ::获取过期日志文件名
-  FOR /F "tokens=1,2,* delims=^: " %%A IN ('%DISM_EXE% /English /LogPath:"%BACKUP_PATH%\%BACKUP_NAME%_DISM.LOG" /Get-ImageInfo /ImageFile:"%BACKUP_PATH%\%BACKUP_FILE%.wim" /Index:1 ^| FINDSTR "Name .*"') DO SET "OVERDUE_NAME=%%~B"
-  ::删除日志文件
-  CALL :ECHO_DATETIME "========== 删除日志文件(!OVERDUE_NAME!*.LOG) " " ==========" >>"%BACKUP_PATH%\%BACKUP_NAME%.LOG"
-  DEL /F /Q "%BACKUP_PATH%\!OVERDUE_NAME!*.LOG" 1>>"%BACKUP_PATH%\%BACKUP_NAME%.LOG" 2>>&1
-  ::删除备份
-  CALL :ECHO_DATETIME "========== 删除镜像(!OVERDUE_NAME!) " " ==========" >>"%BACKUP_PATH%\%BACKUP_NAME%.LOG"
-  %DISM_EXE% /English /LogPath:"%BACKUP_PATH%\%BACKUP_NAME%_DISM.LOG" /Delete-Image /ImageFile:"%BACKUP_PATH%\%BACKUP_FILE%.wim" /Index:1 /CheckIntegrity >>"%BACKUP_PATH%\%BACKUP_NAME%.LOG"
-)
-SET "OVERDUE_NAME="
-SET "OVERDUE_COUNT="
-::备份操作结束
-CALL :ECHO_DATETIME "========== 备份操作结束 " " ==========" >>"%BACKUP_PATH%\%BACKUP_NAME%.LOG"
-GOTO :END
-
-
-::统一日期格式字符串
-::  参数1: 输入日期格式(yyyy MM dd)
-::  参数2: 输出到变量(否则输出到屏幕)
-:FORMAT_DATE
-SET "CU_DATE=%~1"
-IF "_%CU_DATE%" == "_" SET "CU_DATE=%DATE%"
-FOR /F "tokens=1,2,3,* delims=/.-\ " %%A IN ("%CU_DATE%") DO (
-  IF "_%~2" == "_" (
-    ECHO %%A-%%B-%%C
-  ) ELSE (
-    SET "%~2=%%A-%%B-%%C"
-  )
-)
-SET "CU_DATE="
-GOTO :EOF
-
-::生成当前时间
-::  参数1: 前缀文字
-::  参数2: 后缀文字
-:ECHO_DATETIME
-@ECHO %~1 %DATE% %TIME% %~2
-GOTO :EOF
-
-::去空格
-::  参数1: 目标字符串
-::  参数2: 输出到变量名(可选,直接输出到屏幕)
-:TRIM
-CALL :TRIM_TO_VAR %~1
-IF "_%~2" == "_" (
-  ECHO %TRIMED_STRING%
+CALL DateTime.CMD ECHO 清理过期备份
+IF 0%BACKUP_LIST% GTR 0%BACKUP_LIMIT% (
+    SET "BACKUP_CLEAN="
+    SET /A "DEL=!BACKUP_LIST! - !BACKUP_LIMIT! - 1"
+    FOR /L %%I IN (0,1,!DEL!) DO (
+        ECHO !BACKUP_LIST[%%~I]!
+        SET "BACKUP_CLEAN=!BACKUP_CLEAN! --filter="risk /!BACKUP_LIST[%%~I]!*""
+    )
+    CALL RSYNC.CMD PARAM_SET --archive --delete --no-motd --filter="hide *" !BACKUP_CLEAN! --filter="protect /*"
+    CALL RETRY.CMD EXEC RSYNC.CMD RUN "./" "%BACKUP_DEST%"
+    IF NOT "!ERRORLEVEL!" == "0" (
+        ECHO 删除过期备份目录任务失败.
+        SET "RETURN=!ERRORLEVEL!"
+        GOTO :END
+    )
 ) ELSE (
-  SET "%~2=%TRIMED_STRING%"
+    ECHO 未发现过期备份,无需清理.
 )
-SET "TRIMED_STRING="
-GOTO :EOF
-
-::去空格到固定变量TRIMED_STRING
-::  参数: 目标字符串
-:TRIM_TO_VAR
-SET "TRIMED_STRING=%*"
-GOTO :EOF
-
+::执行结束
 :END
-FOR %%I IN ("BACKUP_SRC","BACKUP_PATH","BACKUP_FILE","BACKUP_LIMIT","CFG_FILE","EXI_FILE","WIM_EXI_ARG") DO SET "%%I="
+IF "%RETURN%" == "0" (
+    CALL DateTime.CMD ECHO 执行备份成功
+) ELSE (
+    CALL DateTime.CMD ECHO 执行备份失败
+)
 EXIT /B %RETURN%
