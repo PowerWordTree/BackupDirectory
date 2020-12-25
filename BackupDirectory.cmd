@@ -1,15 +1,15 @@
 ::目录备份脚本
 ::@author FB
-::@version 1.10
+::@version 1.11
 
 @ECHO OFF
 SETLOCAL ENABLEDELAYEDEXPANSION
 CD /D "%~dp0"
-SET "PATH=%CD%\Bin;C:\Develop\Workspaces\CmdTools\Script;%PATH%"
+SET "PATH=%CD%\Bin;%CD%\Script;%PATH%"
 SET "RETURN=0"
 
 ::解析命令
-::::BackupDirectory.CMD [配置[.cfg]]
+::  BackupDirectory.CMD [配置[.cfg]]
 IF "%~1" == "" (
     SET "CFG_FILE=%~dpn0.cfg"
 ) ELSE IF /I "%~x1" == ".cfg" (
@@ -17,7 +17,6 @@ IF "%~1" == "" (
 ) ELSE (
     SET "CFG_FILE=%~f1.cfg"
 )
-::::测试配置文件
 IF NOT EXIST "%CFG_FILE%" (
     ECHO.
     ECHO 配置文件不存在!
@@ -43,13 +42,12 @@ SET "BACKUP_DEST=%$%"
 SET "RSYNC_PASSWORD=%BACKUP_PASS%"
 SET "CYGWIN=winsymlinks:nativestrict"
 SET "MSYS=%CYGWIN%"
-SET "LANG=zh_CN.GBK"
+SET "LANG=en_US.GBK"
 SET "OUTPUT_CHARSET=GBK"
-CALL RETRY.CMD SET 2 30
-SET "BACKUP_ARG=--archive --delete --compress --verbose --human-readable"
-SET "BACKUP_ARG=%BACKUP_ARG% --filter="merge Global.rules""
+CALL Retry.CMD SET 2 30
+SET "BACKUP_FILTER=--filter="merge Global.rules""
 IF NOT "%BACKUP_RULES%" == "" (
-    SET "BACKUP_ARG=%BACKUP_ARG% --filter="merge %BACKUP_RULES%""
+    SET "BACKUP_FILTER=%BACKUP_FILTER% --filter="merge %BACKUP_RULES%""
 )
 IF 0%BACKUP_LIMIT% LEQ 0 SET "BACKUP_LIMIT=1"
 CALL DateTime.CMD GET_DATETIME
@@ -58,78 +56,69 @@ SET "BACKUP_NAME=%BACKUP_NAME::=.%"
 SET "BACKUP_NAME=%BACKUP_NAME: =_%"
 ::检查参数
 CALL DateTime.CMD ECHO 检查参数
-CALL RSYNC.CMD PARAM_SET %BACKUP_ARG% --exclude="*"
-CALL RETRY.CMD EXEC RSYNC.CMD DRY_RUN "%BACKUP_SRC%" "%BACKUP_DEST%" >NUL
+CALL Rsync.CMD PARAM_SET --archive --delete --compress --verbose --human-readable %BACKUP_FILTER% --exclude="*" "%BACKUP_SRC%" "%BACKUP_DEST%"
+CALL Retry.CMD EXEC Rsync.CMD DRY_RUN >NUL
 IF NOT "%ERRORLEVEL%" == "0" (
     ECHO 参数或配置文件有错误.
-    SET "RETURN=%$%"
+    SET "RETURN=%ERRORLEVEL%"
     GOTO :END
 )
 ECHO 模拟运行成功,参数正确.
 ::查询最新备份
 CALL DateTime.CMD ECHO 查询最新备份
-CALL Array.CMD NEW "BACKUP_LIST"
-CALL RSYNC.CMD PARAM_SET --no-motd --include="/*/" --exclude="*"
-FOR /F "tokens=1-4,* usebackq" %%A IN (
-    `CMD /V:ON /C RETRY.CMD EXEC RSYNC.CMD LIST "%BACKUP_DEST%/" ^|^| ECHO LiSt:ErrOr`
-) DO (
-    IF "%%~A" == "LiSt:ErrOr" (
-        ECHO 查询备份列表时发生错误.
-        SET "RETURN=1"
-        GOTO :END
-    )
-    ECHO %%~E | FINDSTR /I /X /R /C:"[0-9][0-9][0-9][0-9]-[0-1][0-9]-[0-3][0-9]_[0-2][0-9]\.[0-5][0-9]\.[0-5][0-9] "
-    IF "!ERRORLEVEL!" == "0" CALL Array.CMD PUSH "BACKUP_LIST" "%%~E"
+CALL Rsync.CMD PARAM_SET --include="/[0-9][0-9][0-9][0-9]-[0-1][0-9]-[0-3][0-9]_[0-2][0-9].[0-5][0-9].[0-5][0-9]/" --exclude="*" "%BACKUP_DEST%/"
+CALL Retry.CMD EXEC Rsync.CMD GET_LIST_ARRAY "BACKUP_LIST"
+IF NOT "%ERRORLEVEL%" == "0" (
+    ECHO 查询备份列表时发生错误.
+    SET "RETURN=%ERRORLEVEL%"
+    GOTO :END
 )
 CALL Array.CMD SORT "BACKUP_LIST"
 CALL Array.CMD GET "BACKUP_LIST"
 SET "BACKUP_LAST=%$%"
+CALL Array.CMD EACH "BACKUP_LIST" "ECHO {V}"
 ECHO 使用"%BACKUP_LAST%"为基准路径
 ::比较目录文件
 CALL DateTime.CMD ECHO 比较目录文件
-SET /A "BACKUP_COUNT=0"
-CALL RSYNC.CMD PARAM_SET %BACKUP_ARG% --no-motd --link-dest="../%BACKUP_LAST%" 
-FOR /F "tokens=* usebackq" %%A IN (
-    `CMD /V:ON /C RETRY.CMD EXEC RSYNC.CMD DRY_RUN "%BACKUP_SRC%/" "%BACKUP_DEST%/%BACKUP_NAME%" ^|^| ECHO CoMp:ErrOr`
-) DO (
-    IF "%%~A" == "CoMp:ErrOr" (
-        ECHO 比较文件和目录时发生错误.
-        SET "RETURN=1"
-        GOTO :END
-    )
-    ECHO %%~A | FINDSTR /V /I /R /C:"building file list .*" /C:"sending incremental file list" /C:"created directory .*" /C:"\./" /C:"sent .* received .*" /C:"total size is .* speedup is .*" 1>NUL 2>&1
-    IF "!ERRORLEVEL!" == "0" SET /A "BACKUP_COUNT+=1"
+CALL Rsync.CMD PARAM_SET --dry-run --archive --delete --compress --verbose --human-readable %BACKUP_FILTER% --link-dest="../%BACKUP_LAST%" "%BACKUP_SRC%/" "%BACKUP_DEST%/%BACKUP_NAME%"
+CALL Retry.CMD EXEC Rsync.CMD GET_STATS_MAP "BACKUP_STATS"
+IF NOT "%ERRORLEVEL%" == "0" (
+    ECHO 比较文件和目录时发生错误.
+    SET "RETURN=%ERRORLEVEL%"
+    GOTO :END
 )
-ECHO 需同步的文件和目录数量: !BACKUP_COUNT!
+CALL Map.CMD EACH "BACKUP_STATS" "ECHO {K}: {V}"
+IF NOT "%BACKUP_STATS[Number of created files]%" == "0" SET "BACKUP_EQUAL=TRUE"
+IF NOT "%BACKUP_STATS[Number of deleted files]%" == "0" SET "BACKUP_EQUAL=TRUE"
+IF NOT "%BACKUP_STATS[Number of regular files transferred]%" == "0" SET "BACKUP_EQUAL=TRUE"
 ::同步目录文件
 CALL DateTime.CMD ECHO 同步目录文件
-IF "%BACKUP_COUNT%" == "0" IF /I NOT "%BACKUP_EQUAL%" == "TRUE" (
+IF /I NOT "%BACKUP_EQUAL%" == "TRUE" (
     ECHO 没有文件或目录改变,无需同步.
     GOTO :END
 )
-CALL RSYNC.CMD PARAM_SET %BACKUP_ARG% --link-dest="../%BACKUP_LAST%"
-CALL RETRY.CMD EXEC RSYNC.CMD RUN "%BACKUP_SRC%/" "%BACKUP_DEST%/%BACKUP_NAME%"
+CALL Rsync.CMD PARAM_SET --archive --delete --compress --verbose --human-readable %BACKUP_FILTER% --link-dest="../%BACKUP_LAST%" "%BACKUP_SRC%/" "%BACKUP_DEST%/%BACKUP_NAME%"
+CALL RETRY.CMD EXEC Rsync.CMD RUN 
 IF NOT "%ERRORLEVEL%" == "0" (
+    SET "RETURN=%ERRORLEVEL%"
     ECHO 执行同步失败,删除不完整备份.
-    CALL RSYNC.CMD PARAM_SET --archive --delete --no-motd --filter="hide *" --filter="risk /%BACKUP_NAME%*" --filter="protect /*"
-    CALL RETRY.CMD EXEC RSYNC.CMD RUN "./" "%BACKUP_DEST%"
+    CALL Rsync.CMD PARAM_SET --archive --delete --no-motd --filter="hide *" --filter="risk /%BACKUP_NAME%" --filter="protect /*" "./" "%BACKUP_DEST%"
+    CALL RETRY.CMD EXEC Rsync.CMD RUN
     ECHO 同步目录文件任务失败.
-    SET "RETURN=1"
     GOTO :END
 )
-SET "BACKUP_LIST[!BACKUP_LIST!]=%BACKUP_LAST%"
-SET /A "BACKUP_LIST+=1"
+CALL Array.CMD PUSH "BACKUP_LIST" "%BACKUP_NAME%"
 ::清理过期备份
 CALL DateTime.CMD ECHO 清理过期备份
 IF 0%BACKUP_LIST% GTR 0%BACKUP_LIMIT% (
-    SET "BACKUP_CLEAN="
-    SET /A "DEL=!BACKUP_LIST! - !BACKUP_LIMIT! - 1"
-    FOR /L %%I IN (0,1,!DEL!) DO (
+    CALL Rsync.CMD PARAM_SET --archive --delete --no-motd --filter="hide *"
+    SET /A "BACKUP_CLEAN=!BACKUP_LIST! - !BACKUP_LIMIT! - 1"
+    FOR /L %%I IN (0,1,!BACKUP_CLEAN!) DO (
         ECHO !BACKUP_LIST[%%~I]!
-        SET "BACKUP_CLEAN=!BACKUP_CLEAN! --filter="risk /!BACKUP_LIST[%%~I]!*""
+        CALL Rsync.CMD PARAM_ADD --filter="risk /!BACKUP_LIST[%%~I]!"
     )
-    CALL RSYNC.CMD PARAM_SET --archive --delete --no-motd --filter="hide *" !BACKUP_CLEAN! --filter="protect /*"
-    CALL RETRY.CMD EXEC RSYNC.CMD RUN "./" "%BACKUP_DEST%"
+    CALL Rsync.CMD PARAM_ADD --filter="protect /*" "./" "%BACKUP_DEST%"
+    CALL RETRY.CMD EXEC Rsync.CMD RUN
     IF NOT "!ERRORLEVEL!" == "0" (
         ECHO 删除过期备份目录任务失败.
         SET "RETURN=!ERRORLEVEL!"

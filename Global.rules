@@ -3,6 +3,12 @@
 - /hiberfil.sys
 - /pagefile.sys
 - /swapfile.sys
-- /System Volume Information
-- /RECYCLER
+- /System Volume Information/
+- /RECYCLER/
 - /**/thumbs.db
+-/ /cygdrive/
+-/ /dev/
+-/ /lost+found/
+-/ /proc/
+-/ /sys/
+-/ /tmp/

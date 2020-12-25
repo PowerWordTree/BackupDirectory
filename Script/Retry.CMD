@@ -25,8 +25,7 @@ GOTO :EOF
 #EXEC#
 ##REQUIRE:SLEEP
 :EXEC
-SET /A "$=%RETRY_COUNT% - 0"
-FOR /L %%I IN (%$%,-1,0) DO (
+FOR /L %%I IN (%RETRY_COUNT%,-1,0) DO (
     CALL %*
     IF "!ERRORLEVEL!" == "0" GOTO :EOF
     IF NOT "%%I" == "0" CALL :SLEEP "%RETRY_DELAY%"

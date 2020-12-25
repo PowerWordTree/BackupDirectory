@@ -29,7 +29,7 @@ FOR %%I IN (%RUN_CFG%) DO (
     )
     ::清理日志
     FOR /F "tokens=1,* usebackq delims=[]" %%A IN (
-        `DIR /B "%LOG_PATH%\%%~I_*" 2^>NUL ^| SORT /R ^| FIND /V /N ""`
+        `DIR /B "%LOG_PATH%\%%~I_*.LOG" 2^>NUL ^| SORT /R ^| FIND /V /N ""`
     ) DO (
         IF 0%%A GTR 0%LOG_LIMIT% DEL /Q /F "%LOG_PATH%\%%B" 1>NUL 2>&1
     )

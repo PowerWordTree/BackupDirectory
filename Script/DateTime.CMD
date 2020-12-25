@@ -39,6 +39,7 @@ SET "$=%~1"
 IF "%~1" == "" SET "$=%TIME%"
 FOR /F "tokens=1,2,3,* delims=/.-\: " %%A IN ("%$%") DO (
     SET "$=%%A:%%B:%%C"
+    IF "!$:~7!" == "" SET "$=0!$!"
 )
 GOTO :EOF
 #EOF#

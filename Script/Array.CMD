@@ -28,7 +28,7 @@ GOTO :EOF
 
 #CLEAR#
 ##REQUIRE:NEW,DESTROY
-::数组创建
+::数组清空
 ::  参数1: 变量名
 :CLEAR
 CALL :DESTROY "%~1"
@@ -73,7 +73,6 @@ GOTO :EOF
 ::  参数1: 变量名
 ::  参数2: 回调命令({K}替代变量索引, {V}替代变量内容)
 :EACH
-ECHO ===========
 SET /A "$=!%~1! - 1"
 FOR /L %%I IN (0,1,%$%) DO (
     SET "$=%~2"
