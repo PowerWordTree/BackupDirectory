@@ -24,7 +24,7 @@ IF NOT EXIST "%CFG_FILE%" (
     GOTO :END
 )
 ::读取配置
-CALL DateTime.CMD ECHO 读取配置
+CALL DateTime.CMD ECHO 开始执行备份
 CALL ConfigFile.CMD CLEAN_VARS "BACKUP_SRC" "BACKUP_DEST" 
 CALL ConfigFile.CMD CLEAN_VARS "BACKUP_PASS" "BACKUP_RULES" 
 CALL ConfigFile.CMD CLEAN_VARS "BACKUP_LIMIT" "BACKUP_EQUAL"
@@ -35,16 +35,14 @@ ECHO 规则文件: %BACKUP_RULES%
 ECHO 保留历史: %BACKUP_LIMIT%
 ECHO 相同副本: %BACKUP_EQUAL%
 ::::处理参数
+SET "LANG=en_US.GBK"
+SET "CYGWIN=winsymlinks:nativestrict"
+SET "MSYS=%CYGWIN%"
 CALL CygPath.CMD TO_CYG_PATH "%BACKUP_SRC%"
 SET "BACKUP_SRC=%$%"
 CALL CygPath.CMD TO_CYG_PATH "%BACKUP_DEST%"
 SET "BACKUP_DEST=%$%"
 SET "RSYNC_PASSWORD=%BACKUP_PASS%"
-SET "CYGWIN=winsymlinks:nativestrict"
-SET "MSYS=%CYGWIN%"
-SET "LANG=en_US.GBK"
-SET "OUTPUT_CHARSET=GBK"
-CALL Retry.CMD SET 2 30
 SET "BACKUP_FILTER=--filter="merge Global.rules""
 IF NOT "%BACKUP_RULES%" == "" (
     SET "BACKUP_FILTER=%BACKUP_FILTER% --filter="merge %BACKUP_RULES%""
@@ -54,9 +52,10 @@ CALL DateTime.CMD GET_DATETIME
 SET "BACKUP_NAME=%$%"
 SET "BACKUP_NAME=%BACKUP_NAME::=.%"
 SET "BACKUP_NAME=%BACKUP_NAME: =_%"
+CALL Retry.CMD SET 2 30
 ::检查参数
 CALL DateTime.CMD ECHO 检查参数
-CALL Rsync.CMD PARAM_SET --archive --delete --compress --verbose --human-readable %BACKUP_FILTER% --exclude="*" "%BACKUP_SRC%" "%BACKUP_DEST%"
+CALL Rsync.CMD PARAM_SET --archive --delete --compress --verbose --human-readable %BACKUP_FILTER% --exclude="*" "%BACKUP_SRC%/" "%BACKUP_DEST%"
 CALL Retry.CMD EXEC Rsync.CMD DRY_RUN >NUL
 IF NOT "%ERRORLEVEL%" == "0" (
     ECHO 参数或配置文件有错误.
