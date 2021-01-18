@@ -1,6 +1,11 @@
+::执行并生成日志
+::@author FB
+::@version 1.01
+
 @ECHO OFF
 SETLOCAL ENABLEDELAYEDEXPANSION
 CD /D "%~dp0"
+SET "PATH=%CD%\Bin;%CD%\Script;%PATH%"
 SET "RETURN=0"
 
 SET "LOG_PATH=LOG"
@@ -16,9 +21,8 @@ FOR /F "tokens=* usebackq" %%A IN (`DIR /B *.CFG 2^>NUL`) DO (
 ::开始执行任务
 FOR %%I IN (%RUN_CFG%) DO (
     ::获取当前日期
-    FOR /F "tokens=1,2,3,* usebackq delims=/.-\: " %%A IN (`DATE /T`) DO (
-        SET "LOG_DATE=%%A-%%B-%%C"
-    )
+    CALL DateTime.CMD GET_DATE
+    SET "LOG_DATE=!$!"
     ::执行并生成日志
     CALL BackupDirectory.CMD "%%~I" 1>>"%LOG_PATH%\%%~I_!LOG_DATE!.LOG" 2>>&1
     IF NOT "!ERRORLEVEL!" == "0" (

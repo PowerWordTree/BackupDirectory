@@ -8,16 +8,13 @@ GOTO :EOF
 
 ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
-#ECHO#
 ::带日期时间的输出
 ::  参数: 文字
 :ECHO
 CALL :GET_DATETIME
 ECHO [%$%] %*
 GOTO :EOF
-#EOF#
 
-#GET_DATE#
 ::获取日期
 ::  参数1: 日期(可选)
 ::  返回$: 日期字符串
@@ -28,9 +25,7 @@ FOR /F "tokens=1,2,3,* delims=/.-\: " %%A IN (%$%) DO (
     SET "$=%%A-%%B-%%C"
 )
 GOTO :EOF
-#EOF#
 
-#GET_TIME#
 ::获取时间
 ::  参数1: 时间(可选)
 ::  返回$: 时间字符串
@@ -42,9 +37,7 @@ FOR /F "tokens=1,2,3,* delims=/.-\: " %%A IN ("%$%") DO (
     IF "!$:~7!" == "" SET "$=0!$!"
 )
 GOTO :EOF
-#EOF#
 
-#GET_DATETIME#
 ::获取日期时间
 ::  参数1: 时间(可选)
 ::  返回$: 时间字符串
@@ -61,4 +54,3 @@ FOR /F "tokens=1-6,* delims=/.-\: " %%A IN ("%$DATETIME%") DO (
 )
 SET "$DATETIME="
 GOTO :EOF
-#EOF#
