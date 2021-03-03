@@ -1,6 +1,6 @@
 ::目录备份脚本
 ::@author FB
-::@version 1.11
+::@version 1.12
 
 @ECHO OFF
 SETLOCAL ENABLEDELAYEDEXPANSION
@@ -47,7 +47,8 @@ SET "BACKUP_FILTER=--filter="merge Global.rules""
 IF NOT "%BACKUP_RULES%" == "" (
     SET "BACKUP_FILTER=%BACKUP_FILTER% --filter="merge %BACKUP_RULES%""
 )
-IF 0%BACKUP_LIMIT% LEQ 0 SET "BACKUP_LIMIT=1"
+
+ECHO %BACKUP_LIMIT%| FINDSTR "[^0-9]" 1>NUL 2>&1 && SET "BACKUP_LIMIT=0"
 CALL DateTime.CMD GET_DATETIME
 SET "BACKUP_NAME=%$%"
 SET "BACKUP_NAME=%BACKUP_NAME::=.%"
@@ -55,7 +56,7 @@ SET "BACKUP_NAME=%BACKUP_NAME: =_%"
 CALL Retry.CMD SET 2 30
 ::检查参数
 CALL DateTime.CMD ECHO 检查参数
-CALL Rsync.CMD PARAM_SET --archive --delete --compress --verbose --human-readable %BACKUP_FILTER% --exclude="*" "%BACKUP_SRC%/" "%BACKUP_DEST%"
+CALL Rsync.CMD PARAM_SET --archive --delete --verbose --human-readable %BACKUP_FILTER% --exclude="*" "%BACKUP_SRC%/" "%BACKUP_DEST%"
 CALL Retry.CMD EXEC Rsync.CMD DRY_RUN >NUL
 IF NOT "%ERRORLEVEL%" == "0" (
     ECHO 参数或配置文件有错误.
@@ -63,6 +64,17 @@ IF NOT "%ERRORLEVEL%" == "0" (
     GOTO :END
 )
 ECHO 模拟运行成功,参数正确.
+::直接模式
+IF 0%BACKUP_LIMIT% EQU 0 (
+    CALL DateTime.CMD ECHO 同步目录文件
+    CALL Rsync.CMD PARAM_SET --archive --delete --verbose --human-readable %BACKUP_FILTER% "%BACKUP_SRC%/" "%BACKUP_DEST%"
+    CALL RETRY.CMD EXEC Rsync.CMD RUN 
+    IF NOT "%ERRORLEVEL%" == "0" (
+        SET "RETURN=%ERRORLEVEL%"
+        ECHO 同步目录文件任务失败.
+    )
+    GOTO :END
+)
 ::查询最新备份
 CALL DateTime.CMD ECHO 查询最新备份
 CALL Rsync.CMD PARAM_SET --include="/[0-9][0-9][0-9][0-9]-[0-1][0-9]-[0-3][0-9]_[0-2][0-9].[0-5][0-9].[0-5][0-9]/" --exclude="*" "%BACKUP_DEST%/"
@@ -79,7 +91,7 @@ CALL Array.CMD EACH "BACKUP_LIST" "ECHO {V}"
 ECHO 使用"%BACKUP_LAST%"为基准路径
 ::比较目录文件
 CALL DateTime.CMD ECHO 比较目录文件
-CALL Rsync.CMD PARAM_SET --dry-run --archive --delete --compress --verbose --human-readable %BACKUP_FILTER% --link-dest="../%BACKUP_LAST%" "%BACKUP_SRC%/" "%BACKUP_DEST%/%BACKUP_NAME%"
+CALL Rsync.CMD PARAM_SET --dry-run --archive --delete --verbose --human-readable %BACKUP_FILTER% --link-dest="../%BACKUP_LAST%" "%BACKUP_SRC%/" "%BACKUP_DEST%/%BACKUP_NAME%"
 CALL Retry.CMD EXEC Rsync.CMD GET_STATS_MAP "BACKUP_STATS"
 IF NOT "%ERRORLEVEL%" == "0" (
     ECHO 比较文件和目录时发生错误.
@@ -96,7 +108,7 @@ IF /I NOT "%BACKUP_EQUAL%" == "TRUE" (
     ECHO 没有文件或目录改变,无需同步.
     GOTO :END
 )
-CALL Rsync.CMD PARAM_SET --archive --delete --compress --verbose --human-readable %BACKUP_FILTER% --link-dest="../%BACKUP_LAST%" "%BACKUP_SRC%/" "%BACKUP_DEST%/%BACKUP_NAME%"
+CALL Rsync.CMD PARAM_SET --archive --delete --verbose --human-readable %BACKUP_FILTER% --link-dest="../%BACKUP_LAST%" "%BACKUP_SRC%/" "%BACKUP_DEST%/%BACKUP_NAME%"
 CALL RETRY.CMD EXEC Rsync.CMD RUN 
 IF NOT "%ERRORLEVEL%" == "0" (
     SET "RETURN=%ERRORLEVEL%"
