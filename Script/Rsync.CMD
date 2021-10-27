@@ -75,10 +75,11 @@ GOTO :EOF
 :GET_LIST_ARRAY
 CALL Array.CMD NEW "%~1"
 FOR /F "tokens=1-4,* usebackq" %%A IN (
-    `CMD /V:ON /C "Rsync.EXE %RSYNC_PARAMS% --list-only --no-motd --no-verbose & "Echo.EXE" @ @ @ @ !ERRORLEVEL!" ^| Unix2dos.EXE ^| FINDSTR /V /I /X /R /C:".*\."`
+    `CMD /V:ON /C "Rsync.EXE %RSYNC_PARAMS% --list-only --no-motd --no-verbose & "Echo.EXE" @ @ @ @ !ERRORLEVEL!" ^| grep.exe -v -w ".*\."`
 ) DO (
-    CALL Array.CMD PUSH "%~1" "%%~E"
+    echo CALL Array.CMD PUSH "%~1" "%%~E"
 )
+goto :eof
 CALL Array.CMD POP "%~1"
 IF NOT "%$%" == "0" CALL Array.CMD DESTROY "%~1"
 EXIT /B %$%
